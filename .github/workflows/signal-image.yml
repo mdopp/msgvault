@@ -1,0 +1,73 @@
+# Fork-only workflow: builds the container image of the Signal importer branch
+# and publishes it to this fork's GitHub Container Registry. It lives on the
+# fork's main branch so the importer branch stays identical to the upstream
+# pull request.
+name: Signal importer image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to build
+        default: signal-import-0.22.0
+        required: true
+      version:
+        description: Upstream release the branch is based on (image tag is <version>-signal)
+        default: 0.22.0
+        required: true
+
+permissions: read-all
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    env:
+      IMAGE: ghcr.io/${{ github.repository_owner }}/msgvault:${{ inputs.version }}-signal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Record build metadata
+        run: |
+          echo "BUILD_COMMIT=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build amd64 image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          load: true
+          tags: ${{ env.IMAGE }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ inputs.version }}-signal
+            org.opencontainers.image.revision=${{ env.BUILD_COMMIT }}
+          build-args: |
+            VERSION=${{ inputs.version }}-signal
+            COMMIT=${{ env.BUILD_COMMIT }}
+            BUILD_DATE=${{ env.BUILD_DATE }}
+
+      - name: Smoke test
+        run: scripts/smoke-container.sh "$IMAGE"
+
+      - name: Check the importer is present
+        run: docker run --rm --network none "$IMAGE" import-signal --help
+
+      - name: Push
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE"
+          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")
+          echo "Published $digest" | tee -a "$GITHUB_STEP_SUMMARY"
