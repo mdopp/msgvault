@@ -462,6 +462,7 @@ func attachmentProducingCommand(args []string) bool {
 		importMboxCommand,
 		"import-messenger",
 		"import-pst",
+		"import-signal",
 		"import-slackdump",
 		"import-synctech-sms",
 		"import-whatsapp",

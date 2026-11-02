@@ -1,5 +1,5 @@
 ---
-last_edited: "2026-10-14"
+last_edited: "2026-11-02"
 title: CLI Reference
 description: Complete command reference for all msgvault commands.
 ---
@@ -2022,6 +2022,34 @@ The `--phone` flag is required and must be in E.164 format (e.g., `+447700900000
 Android `msgstore.db` imports fail with an error when `--after` or `--before` is set.
 
 See [Text Messages](/docs/usage/text-messages/) for usage examples.
+
+---
+
+## import-signal
+
+Import a Signal Android backup that signalbackup-tools decrypted into a
+directory. Pass the directory or its `database.sqlite` file.
+
+```bash
+msgvault import-signal <directory | database.sqlite> --phone <your-number>
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--phone` | Yes | Your Signal phone number in E.164 format (must start with `+`) |
+| `--attachments-dir` | No | Directory holding the `Attachment_*.bin` files (default: the database's directory) |
+| `--display-name` | No | Display name for the phone owner |
+| `--limit` | No | Limit number of messages (for testing) |
+| `--no-default-identity` | No | Do not auto-confirm the phone number as this source's "me" identity |
+
+The source type and message type are `signal`. Conversations are
+`signal:aci:<account ID>`, `signal:e164:<number>` for a contact known only by
+number, or `signal:group:<group ID>` (unpadded base64url). Messages are
+`<author account ID or number>:<sent timestamp in ms>`. Databases older than
+Signal Android database version 185 fail with an error.
+
+See [Text Messages](/docs/usage/text-messages/#import-signal) for what is
+imported and usage examples.
 
 ---
 

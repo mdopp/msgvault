@@ -177,6 +177,7 @@ var KnownMessageTypes = []string{
 	"chatwoot",
 	"slack",
 	"matrix",
+	"signal",
 }
 
 // IsKnownMessageType reports whether mt is a message_type value that msgvault

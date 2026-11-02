@@ -19,6 +19,8 @@ func classifyParticipantIdentifier(
 		classification.ServiceSlug = "imessage"
 	case kind == "whatsapp":
 		classification.ServiceSlug = "whatsapp"
+	case kind == "signal":
+		classification.ServiceSlug = "signal"
 	case kind == "matrix":
 		classification.ServiceSlug = "matrix"
 		if separator := strings.Index(value, ":"); separator > 0 && separator+1 < len(value) {
