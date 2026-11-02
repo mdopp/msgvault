@@ -101,6 +101,12 @@ func isUUID(value string) bool {
 	return true
 }
 
+// NormalizePhone returns the E.164 form of a phone number given with its
+// country code, or "" for anything else. Import uses it for --phone.
+func NormalizePhone(raw string) string {
+	return normalizeE164(raw)
+}
+
 // normalizeE164 returns an E.164 phone number, or "" for anything else.
 func normalizeE164(raw string) string {
 	raw = strings.TrimSpace(raw)
