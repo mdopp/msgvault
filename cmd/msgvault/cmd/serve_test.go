@@ -2041,10 +2041,9 @@ func TestStoreAPIAdapterRunCLISyncPacksOnlyAfterSubprocessSuccess(t *testing.T) 
 	tests := []struct {
 		name           string
 		predecessorErr error
-		wantPacked     bool
-		wantAttempts   int
+		wantQueued     bool
 	}{
-		{name: "success", wantPacked: true, wantAttempts: 1},
+		{name: "success", wantQueued: true},
 		{name: "failure", predecessorErr: errors.New("sync subprocess failed")},
 	}
 
@@ -2079,9 +2078,9 @@ func TestStoreAPIAdapterRunCLISyncPacksOnlyAfterSubprocessSuccess(t *testing.T) 
 				require.NoError(err)
 			}
 			assert.Equal(1, runnerCalls)
-			assert.Equal(tt.wantPacked, f.packedEntry(hash) != nil)
-			assert.Equal(tt.wantAttempts,
-				strings.Count(f.logs.String(), "automatic attachment maintenance complete"))
+			assert.Nil(f.packedEntry(hash), "the ingest only queues; the pack job packs")
+			assert.Equal(tt.wantQueued, f.maintenance.packPending.Load())
+			assert.NotContains(f.logs.String(), "automatic attachment maintenance complete")
 			assert.Empty(events, "successful automatic maintenance writes no normal CLI output")
 		})
 	}
@@ -2282,14 +2281,12 @@ func TestStoreAPIAdapterRunCLICommandPacksOnlyAllowlistedSuccess(t *testing.T) {
 		name           string
 		args           []string
 		predecessorErr error
-		wantPacked     bool
-		wantAttempts   int
+		wantQueued     bool
 	}{
 		{
-			name:         "allowlisted success",
-			args:         []string{importMboxCommand, "archive.mbox"},
-			wantPacked:   true,
-			wantAttempts: 1,
+			name:       "allowlisted success",
+			args:       []string{importMboxCommand, "archive.mbox"},
+			wantQueued: true,
 		},
 		{
 			name: "unrelated success",
@@ -2341,9 +2338,9 @@ func TestStoreAPIAdapterRunCLICommandPacksOnlyAllowlistedSuccess(t *testing.T) {
 				require.NoError(err)
 			}
 			assert.Equal(1, runnerCalls)
-			assert.Equal(tt.wantPacked, f.packedEntry(hash) != nil)
-			assert.Equal(tt.wantAttempts,
-				strings.Count(f.logs.String(), "automatic attachment maintenance complete"))
+			assert.Nil(f.packedEntry(hash), "the ingest only queues; the pack job packs")
+			assert.Equal(tt.wantQueued, f.maintenance.packPending.Load())
+			assert.NotContains(f.logs.String(), "automatic attachment maintenance complete")
 			assert.Empty(events, "successful automatic maintenance writes no normal CLI output")
 		})
 	}
@@ -2647,7 +2644,7 @@ func TestStoreAPIAdapterExplicitRepackCancellationFailsFast(t *testing.T) {
 	assert.True(has, "fail-fast cancellation leaves physical inventory untouched")
 }
 
-func TestStoreAPIAdapterMaintenanceWarningStreamsWithoutChangingSuccess(t *testing.T) {
+func TestStoreAPIAdapterSyncQueuesPackWithoutWaitingForIt(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	maintenance, logs := newFailingAttachmentMaintenance(t)
@@ -2664,33 +2661,10 @@ func TestStoreAPIAdapterMaintenanceWarningStreamsWithoutChangingSuccess(t *testi
 		func(context.Context, []string, func(string, string) error) error { return nil },
 	)
 
-	require.NoError(err, "automatic maintenance failure must preserve sync success")
-	require.Len(events, 1, "one concise warning event")
-	assert.Equal("stderr", events[0].Type)
-	assert.Contains(events[0].Data, "pack-attachments")
-	assert.Contains(events[0].Data, "retry")
-	assert.Contains(logs.String(), "automatic attachment maintenance failed")
-}
-
-func TestStoreAPIAdapterMaintenanceWarningStreamFailurePreservesSuccess(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	maintenance, logs := newFailingAttachmentMaintenance(t)
-	adapter := &storeAPIAdapter{store: maintenance.store, attachmentMaintenance: maintenance}
-	warningErr := errors.New("client disconnected")
-
-	err := adapter.runCLICommandWithRunner(
-		context.Background(),
-		api.CLIRunRequest{Args: []string{importMboxCommand, "archive.mbox"}},
-		func(api.CLIRunEvent) error { return warningErr },
-		func(context.Context, []string, map[string]string, string, func(string, string) error) error {
-			return nil
-		},
-	)
-
-	require.NoError(err, "warning stream failure must preserve command success")
-	assert.Contains(logs.String(), "failed to emit automatic attachment maintenance warning")
-	assert.Contains(logs.String(), warningErr.Error())
+	require.NoError(err)
+	assert.Empty(events, "the sync answers without a maintenance pass")
+	assert.True(maintenance.packPending.Load(), "the scheduled pack job packs later")
+	assert.NotContains(logs.String(), "automatic attachment maintenance")
 }
 
 func TestStoreAPIAdapterServesCLIInitDB(t *testing.T) {

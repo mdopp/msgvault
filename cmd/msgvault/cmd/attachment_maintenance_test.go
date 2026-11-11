@@ -238,52 +238,36 @@ func TestAutomaticAttachmentMaintenanceCancellationIsInformational(t *testing.T)
 	assert.NotContains(f.logs.String(), "level=WARN")
 }
 
-func TestAutomaticAttachmentMaintenanceFailureWarnsWithoutReplacingIngestSuccess(t *testing.T) {
+func TestIngestQueuesPackInsteadOfPackingInline(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	maintenance, logs := newFailingAttachmentMaintenance(t)
-	var warning string
 
 	err := runAfterSuccessfulAttachmentIngest(
 		context.Background(),
 		maintenance,
 		func(context.Context) error { return nil },
-		func(message string) error {
-			warning = message
-			return nil
-		},
+		func(string) error { t.Fatal("no warning: nothing ran"); return nil },
 	)
 
-	require.NoError(err, "maintenance failure must preserve successful ingest")
-	assert.Contains(warning, "pack-attachments")
-	assert.Contains(warning, "retry")
-	logOutput := logs.String()
-	progressAt := strings.Index(logOutput, "level=INFO msg=\"automatic attachment maintenance progress\"")
-	warnAt := strings.Index(logOutput, "level=WARN msg=\"automatic attachment maintenance failed\"")
-	assert.GreaterOrEqual(progressAt, 0, "partial stats are logged on error")
-	assert.Greater(warnAt, progressAt, "progress must be observable before the warning")
-	assert.NotContains(logOutput, "automatic attachment maintenance complete")
-	assert.Contains(logOutput, "blobs_deferred_oversized=0")
-	assert.Contains(logOutput, "packs_deferred_oversized=0")
-	assert.Contains(logOutput, "pack-attachments", "log names the explicit retry command")
+	require.NoError(err)
+	assert.True(maintenance.packPending.Load(), "the scheduled pack job picks it up")
+	assert.NotContains(logs.String(), "automatic attachment maintenance", "nothing packs inline")
 }
 
-func TestAutomaticAttachmentMaintenanceWarningFailurePreservesIngestSuccess(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	maintenance, logs := newFailingAttachmentMaintenance(t)
-	warningErr := errors.New("warning stream closed")
+func TestIngestFailureQueuesNothing(t *testing.T) {
+	maintenance, _ := newFailingAttachmentMaintenance(t)
+	ingestErr := errors.New("ingest failed")
 
 	err := runAfterSuccessfulAttachmentIngest(
 		context.Background(),
 		maintenance,
-		func(context.Context) error { return nil },
-		func(string) error { return warningErr },
+		func(context.Context) error { return ingestErr },
+		nil,
 	)
 
-	require.NoError(err, "warning failure must preserve successful ingest")
-	assert.Contains(logs.String(), "failed to emit automatic attachment maintenance warning")
-	assert.Contains(logs.String(), warningErr.Error())
+	require.ErrorIs(t, err, ingestErr)
+	assert.False(t, maintenance.packPending.Load())
 }
 
 func (f *attachmentMaintenanceFixture) ingestLoose(content []byte) string {
