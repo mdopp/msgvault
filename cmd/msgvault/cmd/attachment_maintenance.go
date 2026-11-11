@@ -341,21 +341,20 @@ func (m *attachmentMaintenance) log() *slog.Logger {
 	return slog.Default()
 }
 
-// runAfterSuccessfulAttachmentIngest runs bounded maintenance only after a
-// successful ingest. Maintenance and warning-stream failures are best-effort:
-// neither may replace the successful ingest result.
+// runAfterSuccessfulAttachmentIngest queues a pack pass after a successful
+// ingest; the scheduled pack job (attachmentPackCron) runs it. Packing inline
+// scanned the whole attachment catalog after every import: one new mail in a
+// store of 250,000 messages waited 28 s for it.
 func runAfterSuccessfulAttachmentIngest(
 	ctx context.Context,
 	maintenance *attachmentMaintenance,
 	ingest func(context.Context) error,
-	emitWarning func(string) error,
+	_ func(string) error,
 ) error {
 	if err := runWithAttachmentMutation(ctx, maintenance, ingest); err != nil {
 		return err
 	}
-	if maintenance != nil {
-		_ = maintenance.runAutomaticPack(ctx, emitWarning)
-	}
+	maintenance.markPackPending()
 	return nil
 }
 
